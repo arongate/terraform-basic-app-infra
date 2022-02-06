@@ -68,7 +68,7 @@ resource "aws_security_group" "lb_basic_app" {
 }
 
 resource "aws_s3_bucket" "basic_app-lb-logs" {
-  bucket = "basicapp-lb-logs"
+  bucket = var.lb_logs_s3bucket
   acl    = "private"
 
   tags = {
@@ -79,41 +79,57 @@ resource "aws_s3_bucket" "basic_app-lb-logs" {
 
 resource "aws_s3_bucket_policy" "allow_access_to_basic_app_lb" {
   bucket = aws_s3_bucket.basic_app-lb-logs.id
-  policy = jsonencode({
-    Id      = "basicAppLBLogBucketPolicy"
-    Version = "2012-10-17"
-    Statement = [
-      {
-        "Action" = "s3:PutObject"
-        Effect   = "Allow"
-        Principal = {
-          "AWS" = "arn:aws:iam::009996457667:root"
-        }
-        "Resource" = "arn:aws:s3:::${var.lb_logs_s3bucket}/basic_app-lb/AWSLogs/850874781919/*"
-      },
-      {
-        "Effect" = "Allow"
-        "Principal" = {
-          "Service" = "delivery.logs.amazonaws.com"
-        }
-        "Action"   = "s3:PutObject"
-        "Resource" = "arn:aws:s3:::${var.lb_logs_s3bucket}/basic_app-lb/AWSLogs/850874781919/*"
-        "Condition" = {
-          "StringEquals" = {
-            "s3:x-amz-acl" = "bucket-owner-full-control"
-          }
-        }
-      },
-      {
-        "Effect" = "Allow"
-        "Principal" = {
-          "Service" = "delivery.logs.amazonaws.com"
-        }
-        "Action"   = "s3:GetBucketAcl",
-        "Resource" = "arn:aws:s3:::${var.lb_logs_s3bucket}"
-      }
+  policy = data.aws_iam_policy_document.allow_access_to_basic_app_lb.json
+}
+
+# Get the current caller identity
+data "aws_caller_identity" "current" {}
+
+data "aws_iam_policy_document" "allow_access_to_basic_app_lb" {
+  statement {
+    actions = [
+      "s3:PutObject",
     ]
-  })
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::009996457667:root"]
+    }
+    resources = [
+      "arn:aws:s3:::${var.lb_logs_s3bucket}/basic_app-lb/AWSLogs/${data.aws_caller_identity.current.account_id}/*",
+    ]
+  }
+  statement {
+    actions = [
+      "s3:PutObject",
+    ]
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["delivery.logs.amazonaws.com"]
+    }
+    resources = [
+      "arn:aws:s3:::${var.lb_logs_s3bucket}/basic_app-lb/AWSLogs/${data.aws_caller_identity.current.account_id}/*",
+    ]
+    condition {
+      test     = "StringEquals"
+      values   = ["bucket-owner-full-control"]
+      variable = "s3:x-amz-acl"
+    }
+  }
+  statement {
+    actions = [
+      "s3:GetBucketAcl"
+    ]
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["delivery.logs.amazonaws.com"]
+    }
+    resources = [
+      "arn:aws:s3:::${var.lb_logs_s3bucket}"
+    ]
+  }
 }
 
 resource "aws_internet_gateway" "basic_app" {
